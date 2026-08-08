@@ -254,6 +254,29 @@
     color: var(--ink);
   }
 
+  /* ---------- Open button ---------- */
+  .open-btn {
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 800;
+    font-size: 1.1rem;
+    color: var(--cream);
+    background: linear-gradient(160deg, var(--terracotta) 0%, var(--chili) 100%);
+    border: 3px solid var(--ink);
+    border-radius: 999px;
+    padding: 12px 26px;
+    cursor: pointer;
+    box-shadow: 0 6px 0 rgba(0,0,0,0.3);
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    animation: wiggle 1s ease-in-out infinite;
+  }
+  .open-btn:hover  { transform: translateY(-2px); }
+  .open-btn:active { transform: translateY(3px); box-shadow: 0 2px 0 rgba(0,0,0,0.3); }
+  @keyframes wiggle {
+    0%,100% { transform: rotate(-2deg) scale(1); }
+    50%     { transform: rotate(2deg) scale(1.05); }
+  }
+  .treasure.is-ready .chest { animation: bounce 0.9s ease infinite; cursor: pointer; }
+
   .reward {
     display: none;
     margin-top: 6px;
@@ -350,6 +373,70 @@
     text-shadow: 1px 1px 0 rgba(0,0,0,0.4);
   }
 
+  /* ---------- Full-screen reveal (lightbox) ---------- */
+  .lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 78px 16px 24px;
+    background: rgba(7, 58, 82, 0.94);
+    backdrop-filter: blur(4px);
+  }
+  .lightbox.show { display: flex; animation: fade 0.35s ease both; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .lb-img {
+    max-width: 96vw;
+    max-height: 84vh;
+    border: 5px solid var(--cream);
+    border-radius: 16px;
+    box-shadow: 0 24px 70px rgba(0,0,0,0.6), 0 0 60px rgba(255,210,63,0.35);
+    animation: pop 0.5s cubic-bezier(.2,1.3,.4,1) both;
+  }
+  .lb-back {
+    position: fixed;
+    top: 18px;
+    left: 18px;
+    z-index: 101;
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 800;
+    font-size: 1rem;
+    color: var(--cream);
+    background: linear-gradient(160deg, var(--terracotta) 0%, var(--chili) 100%);
+    border: 3px solid var(--ink);
+    border-radius: 999px;
+    padding: 10px 22px;
+    cursor: pointer;
+    box-shadow: 0 5px 0 rgba(0,0,0,0.35);
+  }
+  .lb-back:active { transform: translateY(3px); box-shadow: 0 2px 0 rgba(0,0,0,0.35); }
+  .lb-caption {
+    position: fixed;
+    bottom: 22px;
+    left: 0; right: 0;
+    text-align: center;
+    font-family: 'Rye', cursive;
+    font-size: clamp(1.1rem, 3.5vw, 1.8rem);
+    color: var(--sun);
+    text-shadow: 2px 2px 0 var(--ink);
+    pointer-events: none;
+  }
+
+  /* reward image shown on the card after "Back" */
+  .reward-img {
+    width: 100%;
+    border-radius: 12px;
+    border: 3px solid var(--ink);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+    cursor: pointer;
+    display: block;
+    margin: 4px 0 2px;
+    transition: transform 0.2s ease;
+  }
+  .reward-img:hover { transform: scale(1.02); }
+
   @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; }
   }
@@ -376,6 +463,13 @@
   </header>
 
   <main class="hunt" id="hunt"><!-- treasures injected by JS --></main>
+
+  <!-- Full-screen treasure reveal -->
+  <div class="lightbox" id="lightbox" aria-hidden="true">
+    <button class="lb-back" id="lbBack" type="button">&larr; Back</button>
+    <img class="lb-img" id="lbImg" alt="Treasure reveal" />
+    <div class="lb-caption" id="lbCaption"></div>
+  </div>
 
   <footer>
     🌵 Made with love &middot; Stay tuned &mdash; the tide reveals all 🐠
@@ -411,10 +505,12 @@
      ============================================================ */
   const TREASURES = [
     {
-      chest: "🗺️",
+      chest: "🎁",
       title: "The First Treasure",
       hint: "The hunt begins! Watch the sand timer run out…",
       unlockISO: "2026-08-01T00:00:00",
+      image: "first treasure.jpeg",   // full-screen reveal image
+      revealTitle: "SUP Walensee Treasure",
       code: "REZA-UNO-2026",
       desc: "Your first voucher is yours. Congratulations!"
     },
@@ -487,18 +583,95 @@
   function pad(n) { return String(n).padStart(2, "0"); }
 
   /* ---------------- Countdown / unlock loop ---------------- */
+  // Time's up: show the "Open" button. The gift stays closed until clicked.
+  function arm(i) {
+    const card = hunt.querySelector(`.treasure[data-index="${i}"]`);
+    if (!card || card.classList.contains("is-ready") || card.classList.contains("is-unlocked")) return;
+    card.classList.add("is-ready");
+    const state = card.querySelector(".state");
+    if (state) {
+      state.innerHTML = `<button class="open-btn" type="button">🎁 Tap to open!</button>`;
+      state.querySelector(".open-btn").addEventListener("click", () => reveal(i));
+    }
+    const chest = card.querySelector(".chest");
+    if (chest) chest.addEventListener("click", () => reveal(i));
+    const hint = card.querySelector(".hint");
+    if (hint) hint.textContent = "The wait is over — open your gift!";
+  }
+
+  // Actually reveal the treasure (triggered by the user's click).
   function reveal(i) {
+    const t = TREASURES[i];
     const card = hunt.querySelector(`.treasure[data-index="${i}"]`);
     if (!card || card.classList.contains("is-unlocked")) return;
+    card.classList.remove("is-ready");
     card.classList.add("is-unlocked");
+    burst(card);
+
+    if (t.image) {
+      // Pop the gift image full-screen; the card transforms when "Back" is pressed.
+      openLightbox(t.image, t.revealTitle, () => transformCard(i));
+      return;
+    }
+
+    // Fallback: reveal a voucher code inline (treasures without an image).
     const reward = card.querySelector(`[data-reward="${i}"]`);
     if (reward) reward.style.display = "block";
     const state = card.querySelector(".state");
     if (state) state.innerHTML = `<span class="locked-msg" style="background:var(--teal);color:#fff;border-style:solid;border-color:var(--teal-deep)">🎉 Unlocked!</span>`;
     const hint = card.querySelector(".hint");
     if (hint) hint.textContent = "The treasure is yours — claim it below!";
-    burst(card);
   }
+
+  // Turn the card itself into the picture + reveal title (after "Back").
+  function transformCard(i) {
+    const t = TREASURES[i];
+    const card = hunt.querySelector(`.treasure[data-index="${i}"]`);
+    if (!card) return;
+    const chest = card.querySelector(".chest");
+    if (chest) {
+      const img = document.createElement("img");
+      img.className = "reward-img";
+      img.src = encodeURI(t.image);
+      img.alt = t.revealTitle || t.title;
+      img.addEventListener("click", () => openLightbox(t.image, t.revealTitle, null));
+      chest.replaceWith(img);
+    }
+    const h2 = card.querySelector("h2");
+    if (h2) h2.textContent = t.revealTitle || t.title;
+    const state = card.querySelector(".state");
+    if (state) state.innerHTML = "";
+    const reward = card.querySelector(`[data-reward="${i}"]`);
+    if (reward) reward.style.display = "none";
+    const hint = card.querySelector(".hint");
+    if (hint) hint.textContent = "Tap the picture to open it full-screen.";
+  }
+
+  /* ---------------- Full-screen lightbox ---------------- */
+  const lightbox   = document.getElementById("lightbox");
+  const lbImg      = document.getElementById("lbImg");
+  const lbCaption  = document.getElementById("lbCaption");
+  let   lbOnClose  = null;
+
+  function openLightbox(src, caption, onClose) {
+    lbImg.src = encodeURI(src);
+    lbCaption.textContent = caption || "";
+    lbOnClose = onClose;
+    lightbox.classList.add("show");
+    lightbox.setAttribute("aria-hidden", "false");
+  }
+  function closeLightbox() {
+    lightbox.classList.remove("show");
+    lightbox.setAttribute("aria-hidden", "true");
+    const cb = lbOnClose;
+    lbOnClose = null;
+    if (cb) cb();
+  }
+  document.getElementById("lbBack").addEventListener("click", closeLightbox);
+  lightbox.addEventListener("click", (e) => { if (e.target === lightbox) closeLightbox(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && lightbox.classList.contains("show")) closeLightbox();
+  });
 
   function tick() {
     const now = Date.now();
@@ -507,7 +680,7 @@
       const diff = target - now;
       const card = hunt.querySelector(`.treasure[data-index="${i}"]`);
 
-      if (diff <= 0) { reveal(i); return; }
+      if (diff <= 0) { arm(i); return; }
 
       // update live countdown (first card only)
       const cd = card.querySelector(`.countdown[data-cd="${i}"]`);
@@ -590,3 +763,4 @@
   </script>
 </body>
 </html>
+
